@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: isbn-book
+    runtime: python
+
+    buildCommand: |
+      apt-get update
+      apt-get install -y libzbar0
+      pip install -r requirements.txt
+
+    startCommand: gunicorn test:app
