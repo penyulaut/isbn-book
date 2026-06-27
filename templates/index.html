@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scan Buku</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Barcode ISBN Scanner</p>
+          <h1>Scan ISBN Buku</h1>
+          <p class="lead">
+            Arahkan kamera ke barcode, lalu tekan tombol scan. Backend tetap
+            mendecode barcode dan mengambil data buku dari Google Books API.
+          </p>
+        </div>
+        <div class="card status-card">
+          <div class="status-label">Status</div>
+          <div id="statusText" class="status-text">Menunggu kamera aktif.</div>
+        </div>
+      </section>
+
+      <section class="scanner-grid">
+        <div class="card scanner-card">
+          <div class="manual-section">
+            <label class="field">
+              <span class="field-label">Input ISBN Manual</span>
+              <input
+                id="isbnInput"
+                type="text"
+                inputmode="text"
+                autocomplete="off"
+                placeholder="Masukkan ISBN, misalnya 978602..."
+              />
+            </label>
+            <div class="actions manual-actions">
+              <button id="lookupBtn" type="button">Cari ISBN</button>
+            </div>
+          </div>
+          <label class="field">
+            <span class="field-label">Pilih Kamera</span>
+            <select id="cameraSelect" disabled>
+              <option value="">Mencari kamera...</option>
+            </select>
+          </label>
+          <div class="video-wrap">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" hidden></canvas>
+          </div>
+          <div class="actions">
+            <button id="startBtn" type="button">Aktifkan Kamera</button>
+            <button id="scanBtn" type="button" disabled>Scan Barcode</button>
+          </div>
+        </div>
+
+        <div class="card result-card">
+          <div class="result-header">
+            <h2>Hasil Buku</h2>
+            <span id="isbnBadge" class="badge">Belum ada ISBN</span>
+          </div>
+          <div id="result" class="result-empty">
+            Hasil scan akan muncul di sini.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
