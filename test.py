@@ -1,5 +1,7 @@
 import base64
 import os
+import json
+import tempfile
 from datetime import datetime
 from threading import Lock
 
@@ -147,12 +149,31 @@ def resolve_book_info(isbn):
 
 
 def get_google_sheets_client():
-    if not GOOGLE_SERVICE_ACCOUNT_FILE:
-        raise RuntimeError(
-            "GOOGLE_SERVICE_ACCOUNT_FILE belum diset."
-        )
+    # Prioritas 1: Railway (Environment Variable)
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS")
 
-    return gspread.service_account(filename=GOOGLE_SERVICE_ACCOUNT_FILE)
+    if credentials_json:
+        credentials = json.loads(credentials_json)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            delete=False,
+            encoding="utf-8"
+        ) as f:
+            json.dump(credentials, f)
+            temp_path = f.name
+
+        return gspread.service_account(filename=temp_path)
+
+    # Prioritas 2: Lokal (File JSON)
+    if GOOGLE_SERVICE_ACCOUNT_FILE and os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE):
+        return gspread.service_account(filename=GOOGLE_SERVICE_ACCOUNT_FILE)
+
+    raise RuntimeError(
+        "Google Sheets credentials belum dikonfigurasi. "
+        "Gunakan GOOGLE_CREDENTIALS (Railway) atau GOOGLE_SERVICE_ACCOUNT_FILE (Lokal)."
+    )
 
 
 def get_google_worksheet():
