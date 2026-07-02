@@ -1,13 +1,33 @@
 import base64
 import os
+from datetime import datetime
+from threading import Lock
 
 import cv2
+import gspread
 import numpy as np
 import requests
 from flask import Flask, jsonify, render_template, request
+from gspread.exceptions import WorksheetNotFound
 from pyzbar.pyzbar import decode
 
 API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY", "AIzaSyAOqaDwXsMRWuj5C5OkvdftJNxSJ8c7bv0")
+GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "1EfX9BVSsirrXjZ_B64k-qakUicW1nq61628Gx082gXo")
+GOOGLE_SHEETS_WORKSHEET_NAME = os.getenv("GOOGLE_SHEETS_WORKSHEET_NAME", "Books")
+GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "books-recognition-500615-4385e1b0aa91.json")
+GOOGLE_SHEETS_HEADERS = [
+    "isbn",
+    "title",
+    "authors",
+    "publisher",
+    "publishedDate",
+    "categories",
+    "source",
+    "description",
+    "cover",
+    "savedAt",
+]
+GOOGLE_SHEETS_LOCK = Lock()
 
 app = Flask(__name__)
 
@@ -126,6 +146,128 @@ def resolve_book_info(isbn):
     return None
 
 
+def get_google_sheets_client():
+    if not GOOGLE_SERVICE_ACCOUNT_FILE:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_FILE belum diset."
+        )
+
+    return gspread.service_account(filename=GOOGLE_SERVICE_ACCOUNT_FILE)
+
+
+def get_google_worksheet():
+    if not GOOGLE_SHEETS_SPREADSHEET_ID:
+        raise RuntimeError("GOOGLE_SHEETS_SPREADSHEET_ID belum diset.")
+
+    client = get_google_sheets_client()
+    spreadsheet = client.open_by_key(GOOGLE_SHEETS_SPREADSHEET_ID)
+
+    try:
+        worksheet = spreadsheet.worksheet(GOOGLE_SHEETS_WORKSHEET_NAME)
+    except WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=GOOGLE_SHEETS_WORKSHEET_NAME,
+            rows=1000,
+            cols=len(GOOGLE_SHEETS_HEADERS),
+        )
+
+    return worksheet
+
+
+def ensure_google_sheet_headers(worksheet):
+    if worksheet.get_all_values():
+        return
+
+    worksheet.append_row(GOOGLE_SHEETS_HEADERS, value_input_option="RAW")
+
+def load_saved_isbns(worksheet):
+    ensure_google_sheet_headers(worksheet)
+
+    saved_isbns = set()
+
+    for saved_isbn in worksheet.col_values(1)[1:]:
+        normalized_saved_isbn = normalize_isbn(saved_isbn)
+        if normalized_saved_isbn:
+            saved_isbns.add(normalized_saved_isbn)
+
+    return saved_isbns
+
+
+def save_book_to_spreadsheet(book):
+    if not book:
+        return {"saved": False, "duplicate": False, "message": "Tidak ada data buku untuk disimpan."}
+
+    isbn = normalize_isbn(book.get("isbn", ""))
+    if not isbn:
+        return {"saved": False, "duplicate": False, "message": "ISBN tidak valid untuk disimpan."}
+
+    if not GOOGLE_SHEETS_SPREADSHEET_ID or not GOOGLE_SERVICE_ACCOUNT_FILE:
+        return {
+            "saved": False,
+            "duplicate": False,
+            "message": "Google Sheets belum dikonfigurasi. Isi GOOGLE_SHEETS_SPREADSHEET_ID dan GOOGLE_SERVICE_ACCOUNT_FILE.",
+        }
+
+    with GOOGLE_SHEETS_LOCK:
+        try:
+            worksheet = get_google_worksheet()
+            saved_isbns = load_saved_isbns(worksheet)
+
+            if isbn in saved_isbns:
+                return {
+                    "saved": False,
+                    "duplicate": True,
+                    "message": "ISBN sudah tersimpan di Google Sheets.",
+                }
+
+            worksheet.append_row(
+                [
+                    isbn,
+                    book.get("title") or "-",
+                    book.get("authors") or "-",
+                    book.get("publisher") or "-",
+                    book.get("publishedDate") or "-",
+                    book.get("categories") or "-",
+                    book.get("source") or "-",
+                    book.get("description") or "-",
+                    book.get("cover") or "-",
+                    datetime.now().isoformat(timespec="seconds"),
+                ],
+                value_input_option="RAW",
+            )
+        except Exception as exc:
+            return {
+                "saved": False,
+                "duplicate": False,
+                "message": f"Gagal menyimpan ke Google Sheets: {exc}",
+            }
+
+    return {"saved": True, "duplicate": False, "message": "Buku disimpan ke Google Sheets."}
+
+
+def build_book_payload(isbn, book):
+    save_result = save_book_to_spreadsheet(book)
+    return {
+        "ok": True,
+        "isbn": isbn,
+        "book": book,
+        "saved": save_result["saved"],
+        "duplicate": save_result["duplicate"],
+        "saveMessage": save_result["message"],
+    }
+
+
+def build_not_found_payload(isbn):
+    return {
+        "ok": True,
+        "isbn": isbn,
+        "book": None,
+        "found": False,
+        "source": None,
+        "message": "ISBN tidak ditemukan di Google Books maupun Perpusnas.",
+    }
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -157,9 +299,9 @@ def scan():
         return jsonify({"ok": False, "message": f"Error saat mengambil data buku: {exc}"}), 502
 
     if not book:
-        return jsonify({"ok": True, "isbn": isbn, "book": None, "message": "Buku tidak ditemukan di Google Books maupun Perpusnas."})
+        return jsonify(build_not_found_payload(isbn))
 
-    return jsonify({"ok": True, "isbn": isbn, "book": book})
+    return jsonify(build_book_payload(isbn, book))
 
 
 @app.route("/lookup", methods=["POST"])
@@ -176,9 +318,9 @@ def lookup():
         return jsonify({"ok": False, "message": f"Error saat mengambil data buku: {exc}"}), 502
 
     if not book:
-        return jsonify({"ok": True, "isbn": isbn, "book": None, "message": "Buku tidak ditemukan di Google Books maupun Perpusnas."})
+        return jsonify(build_not_found_payload(isbn))
 
-    return jsonify({"ok": True, "isbn": isbn, "book": book})
+    return jsonify(build_book_payload(isbn, book))
 
 
 if __name__ == "__main__":

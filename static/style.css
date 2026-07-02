@@ -194,9 +194,19 @@ button:disabled {
   color: #03110a;
 }
 
+#stopBtn {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  color: white;
+}
+
 #lookupBtn {
   background: linear-gradient(135deg, #f59e0b, #f97316);
   color: #1f1300;
+}
+
+#lihatdb {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
 }
 
 .result-header {

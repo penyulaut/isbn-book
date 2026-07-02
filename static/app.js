@@ -1,6 +1,7 @@
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
 const scanBtn = document.getElementById("scanBtn");
 const lookupBtn = document.getElementById("lookupBtn");
 const isbnInput = document.getElementById("isbnInput");
@@ -19,6 +20,10 @@ function stopStream() {
 
   stream.getTracks().forEach((track) => track.stop());
   stream = null;
+  video.srcObject = null;
+  scanBtn.disabled = true;
+  stopBtn.disabled = true;
+  setStatus("Kamera dimatikan.");
 }
 
 async function loadCameras(preferredDeviceId = "") {
@@ -68,10 +73,10 @@ function setStatus(message, isError = false) {
   statusText.style.color = isError ? "var(--danger)" : "var(--text)";
 }
 
-function renderBook(book) {
+function renderBook(book, emptyMessage = "Buku tidak ditemukan.") {
   if (!book) {
     resultEl.className = "result-empty";
-    resultEl.textContent = "Buku tidak ditemukan.";
+    resultEl.textContent = emptyMessage;
     return;
   }
 
@@ -86,6 +91,27 @@ function renderBook(book) {
     ${book.cover ? `<div class="result-item"><span class="label">Cover Buku</span><img class="cover" src="${book.cover}" alt="Cover buku"></div>` : ""}
     <div class="result-item"><span class="label">Deskripsi</span><div class="value">${book.description || "-"}</div></div>
   `;
+}
+
+function buildFoundStatus(data) {
+  const sourceMessage =
+    data.source === "perpusnas"
+      ? "Buku ditemukan di Perpusnas."
+      : "Buku ditemukan di Google Books.";
+
+  if (data.saved) {
+    return `${sourceMessage} Buku disimpan ke Google Sheets.`;
+  }
+
+  if (data.duplicate) {
+    return `${sourceMessage} ISBN sudah ada di Google Sheets, jadi tidak disimpan ulang.`;
+  }
+
+  if (data.saveMessage) {
+    return `${sourceMessage} ${data.saveMessage}`;
+  }
+
+  return sourceMessage;
 }
 
 async function fetchBookByIsbn(isbn) {
@@ -121,12 +147,14 @@ async function handleBookLookup(isbn) {
     isbnBadge.textContent = data.isbn || "ISBN ditemukan";
     setStatus(
       data.book
-        ? data.source === "perpusnas"
-          ? "Buku ditemukan di Perpusnas."
-          : "Buku ditemukan."
-        : "ISBN ditemukan, tetapi buku tidak ada di API.",
+        ? buildFoundStatus(data)
+        : data.message ||
+            "ISBN tidak ditemukan di Google Books maupun Perpusnas.",
     );
-    renderBook(data.book);
+    renderBook(
+      data.book,
+      data.message || "ISBN tidak ditemukan di Google Books maupun Perpusnas.",
+    );
   } catch (error) {
     isbnBadge.textContent = "Gagal lookup";
     setStatus(`Error: ${error.message}`, true);
@@ -162,9 +190,14 @@ startBtn.addEventListener("click", async () => {
     setStatus(
       "Kamera aktif. Arahkan barcode ke layar lalu tekan Scan Barcode.",
     );
+    stopBtn.disabled = false;
   } catch (error) {
     setStatus(`Gagal mengakses kamera: ${error.message}`, true);
   }
+});
+
+stopBtn.addEventListener("click", () => {
+  stopStream();
 });
 
 cameraSelect.addEventListener("change", async () => {
@@ -217,12 +250,14 @@ scanBtn.addEventListener("click", async () => {
     isbnBadge.textContent = data.isbn || "ISBN ditemukan";
     setStatus(
       data.book
-        ? data.source === "perpusnas"
-          ? "Buku ditemukan di Perpusnas."
-          : "Buku ditemukan."
-        : "ISBN ditemukan, tetapi buku tidak ada di API.",
+        ? buildFoundStatus(data)
+        : data.message ||
+            "ISBN tidak ditemukan di Google Books maupun Perpusnas.",
     );
-    renderBook(data.book);
+    renderBook(
+      data.book,
+      data.message || "ISBN tidak ditemukan di Google Books maupun Perpusnas.",
+    );
   } catch (error) {
     setStatus(`Error: ${error.message}`, true);
     resultEl.className = "result-empty";

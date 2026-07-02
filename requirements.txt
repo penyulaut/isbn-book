@@ -4,3 +4,4 @@ numpy
 pyzbar
 requests
 gunicorn
+gspread
