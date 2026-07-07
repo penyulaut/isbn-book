@@ -54,8 +54,11 @@ def decode_barcode_from_image(image_bytes):
 
 def fetch_book_info(isbn):
     url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}&key={API_KEY}"
-    response = requests.get(url, timeout=15)
-    response.raise_for_status()
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
 
     data = response.json()
     if data.get("totalItems", 0) == 0:
