@@ -90,12 +90,28 @@ def fetch_book_info_perpusnas(isbn):
         "length": "10",
     }
 
-    response = requests.get(
-        "https://isbn.perpusnas.go.id/landing_page/serverside_search2",
-        params=params,
-        timeout=15,
-    )
-    response.raise_for_status()
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://isbn.perpusnas.go.id/",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+    try:
+        response = requests.get(
+            "https://isbn.perpusnas.go.id/landing_page/serverside_search2",
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
 
     data = response.json()
     rows = data.get("data", [])
