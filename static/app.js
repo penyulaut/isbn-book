@@ -247,6 +247,10 @@ scanBtn.addEventListener("click", async () => {
       return;
     }
 
+    if (data.isbn) {
+      isbnInput.value = data.isbn;
+    }
+
     isbnBadge.textContent = data.isbn || "ISBN ditemukan";
     setStatus(
       data.book

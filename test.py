@@ -1,6 +1,7 @@
 import base64
 import os
 import json
+import re
 import tempfile
 from datetime import datetime
 from threading import Lock
@@ -35,7 +36,11 @@ app = Flask(__name__)
 
 
 def normalize_isbn(isbn):
-    return "".join(ch for ch in str(isbn) if ch.isdigit() or ch.upper() == "X")
+    return re.sub(r"[^0-9Xx]", "", str(isbn or "")).upper()
+
+
+def clean_isbn(value):
+    return re.sub(r"[^0-9Xx]", "", value or "").upper()
 
 
 def decode_barcode_from_image(image_bytes):
@@ -45,11 +50,66 @@ def decode_barcode_from_image(image_bytes):
     if frame is None:
         return None
 
-    barcodes = decode(frame)
-    if len(barcodes) == 0:
-        return None
+    candidates = [frame]
 
-    return barcodes[0].data.decode("utf-8")
+    if len(frame.shape) == 3:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = frame
+
+    larger = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    larger_3x = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    thresholded = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    adaptive = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        11,
+    )
+    equalized = cv2.equalizeHist(gray)
+    sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+    sharpened = cv2.filter2D(gray, -1, sharpen_kernel)
+
+    height, width = gray.shape[:2]
+    center_crop = gray[
+        int(height * 0.15) : int(height * 0.85),
+        int(width * 0.08) : int(width * 0.92),
+    ]
+    center_crop_large = cv2.resize(center_crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+
+    candidates.extend(
+        [
+            gray,
+            larger,
+            larger_3x,
+            blurred,
+            thresholded,
+            adaptive,
+            equalized,
+            sharpened,
+            center_crop,
+            center_crop_large,
+        ]
+    )
+
+    variants = []
+    for candidate in candidates:
+        variants.append(candidate)
+        variants.append(cv2.rotate(candidate, cv2.ROTATE_90_CLOCKWISE))
+        variants.append(cv2.rotate(candidate, cv2.ROTATE_90_COUNTERCLOCKWISE))
+        variants.append(cv2.rotate(candidate, cv2.ROTATE_180))
+
+    for candidate in variants:
+        for barcode in decode(candidate):
+            decoded = barcode.data.decode("utf-8", errors="ignore").strip()
+            isbn = clean_isbn(decoded)
+            if isbn:
+                return isbn
+
+    return None
 
 
 def fetch_book_info(isbn):
